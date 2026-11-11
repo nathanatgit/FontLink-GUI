@@ -1,0 +1,42 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Build and package FontLink Settings
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $msbuild = & $vswhere -latest -products '*' -requires Microsoft.Component.MSBuild `
+            -find 'MSBuild\Current\Bin\MSBuild.exe'
+          if (-not $msbuild) { throw 'Visual Studio MSBuild was not found.' }
+          & $msbuild 'FontLink Settings.sln' /restore /p:Configuration=Release
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          $output = 'FontLink Settings/bin/Release'
+          if (-not (Test-Path -LiteralPath "$output/FontLink Settings.exe")) {
+            throw 'The Release build did not produce FontLink Settings.exe.'
+          }
+          Compress-Archive -Path "$output/*", License.txt -DestinationPath FontLink-GUI-Windows.zip
+
+      - name: Publish GitHub release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          gh release create "$env:RELEASE_TAG" FontLink-GUI-Windows.zip `
+            --repo "$env:GITHUB_REPOSITORY" --verify-tag --generate-notes
